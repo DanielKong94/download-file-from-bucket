@@ -230,49 +230,6 @@ export AWS_SECRET_ACCESS_KEY=your_secret
   s3://my-bucket/files/ ./files
 ```
 
-## Architecture
-
-The application follows a modular architecture:
-
-- **Providers**: Pluggable cloud storage providers (currently S3-compatible)
-- **Downloader**: Handles concurrent downloading with progress tracking
-- **Config**: Flexible configuration management
-- **CLI**: User-friendly command-line interface
-
-### Adding New Providers
-
-To add a new cloud provider:
-
-1. Implement the `Provider` interface in the `providers` package
-2. Add the provider type to `ProviderType` constants
-3. Update the factory function in `providers/factory.go`
-4. Add configuration handling in the config package
-
-## Error Handling
-
-The application provides detailed error messages and handles:
-
-- Network failures with automatic retries
-- Authentication errors
-- Invalid URLs or configurations
-- File system errors
-- Partial downloads
-
-## Performance
-
-- **Concurrent Downloads**: Configurable concurrency level
-- **Memory Efficient**: Streams files directly to disk
-- **Progress Tracking**: Real-time download progress
-- **Resumable Downloads**: Handles interrupted downloads gracefully
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Implement your changes
-4. Add tests
-5. Submit a pull request
-
 ## License
 
 This project is licensed under the MIT License. 
