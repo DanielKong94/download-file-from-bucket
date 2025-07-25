@@ -41,3 +41,4 @@ config.yaml
 # Test files
 test-downloads/ 
 images/
+sample_format_prompt.txt

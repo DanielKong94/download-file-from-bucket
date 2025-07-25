@@ -6,8 +6,12 @@ A fast and flexible Go application to clone entire folders from cloud storage bu
 
 - **Multi-Provider Support**: AWS S3, DigitalOcean Spaces, and any S3-compatible service
 - **Concurrent Downloads**: Configurable concurrency for fast downloads
+- **Enhanced UI**: Beautiful progress bars, real-time statistics, and colorful output
 - **Flexible Configuration**: Configuration file, environment variables, or CLI flags
-- **Progress Tracking**: Real-time progress updates during downloads
+- **Progress Tracking**: Real-time progress updates with speed and ETA calculations
+- **Zip Compression**: Automatically compress downloaded folders into zip files
+- **Cleanup Options**: Option to remove source directory after zip creation
+- **Duplicate File Handling**: Smart handling of duplicate file names with automatic numbering
 - **Extensible Architecture**: Easy to add support for new cloud providers
 
 ## Supported Providers
@@ -95,11 +99,11 @@ export DO_BUCKET=my-space
 ### Basic Usage
 
 ```bash
-# Clone from S3
+# Clone from S3 with beautiful progress bars
 ./download-bucket clone s3://my-bucket/folder/ ./local-folder
 
-# Clone from DigitalOcean Spaces
-./download-bucket clone spaces://my-space/data/ ./local-data
+# Clone from DigitalOcean Spaces with verbose output
+./download-bucket clone --verbose spaces://my-space/data/ ./local-data
 
 # Clone with specific provider
 ./download-bucket clone --provider=aws s3://my-bucket/images/ ./images
@@ -113,6 +117,21 @@ export DO_BUCKET=my-space
 
 # Verbose output
 ./download-bucket clone --verbose s3://my-bucket/folder/ ./local
+
+# Create zip file after download
+./download-bucket clone --zip s3://my-bucket/folder/ ./local
+
+# Create zip file with custom path
+./download-bucket clone --zip --zip-path=./my-archive.zip s3://my-bucket/folder/ ./local
+
+# Create zip and remove source directory
+./download-bucket clone --zip --remove-source s3://my-bucket/folder/ ./local
+
+# Disable duplicate file handling (overwrites existing files)
+./download-bucket clone --handle-duplicates=false s3://my-bucket/folder/ ./local
+
+# Use quiet mode for cleaner output (reduces progress bar updates)
+./download-bucket clone --quiet s3://my-bucket/folder/ ./local
 
 # Override credentials
 ./download-bucket clone \
@@ -175,6 +194,11 @@ The application supports multiple URL formats:
 - `--region`: Region (overrides config)
 - `--endpoint`: Custom endpoint (overrides config)
 - `--bucket`: Bucket name (overrides URL)
+- `--zip`: Create a zip file after downloading
+- `--zip-path`: Path for the zip file (default: `<destination>.zip`)
+- `--remove-source`: Remove source directory after creating zip
+- `--handle-duplicates`: Handle duplicate files by adding numbers (default: true)
+- `--quiet`: Use simple progress output instead of progress bar
 
 ### Config Commands
 
@@ -228,6 +252,54 @@ export AWS_SECRET_ACCESS_KEY=your_secret
   --access-key=minio_key \
   --secret-key=minio_secret \
   s3://my-bucket/files/ ./files
+```
+
+## User Experience & Performance
+
+### Enhanced UI Features
+
+- **🎨 Beautiful Progress Bars**: Real-time visual progress with colorful output
+- **📊 Live Statistics**: Download speed, ETA, file counts, and transfer rates
+- **✅ Visual Feedback**: Success/error indicators with emoji and color coding
+- **📋 Comprehensive Summary**: Detailed completion reports with compression ratios
+- **🚀 Smart Progress**: Automatic calculation of speed, ETA, and completion percentage
+
+### Performance Optimizations
+
+- **⚡ Concurrent Downloads**: Configurable concurrency level for maximum speed
+- **💾 Memory Efficient**: Streams files directly to disk without memory overhead
+- **📈 Progress Tracking**: Real-time download progress with visual feedback
+- **🔄 Resilient Downloads**: Handles interrupted downloads and network issues gracefully
+
+### UI Preview
+
+When you run a download, you'll see:
+
+```
+╭─────────────────────────────────────────────────╮
+│              Download Starting                  │
+╰─────────────────────────────────────────────────╯
+📁 Source:      s3://my-bucket/data/
+📂 Destination: ./local-data
+📊 Total Files: 672
+💾 Total Size:  122.5 MB
+⏰ Started:     14:23:45
+
+Files: 450/672 | Speed: 2.3 MB/s | ETA: 00:32
+[████████████████████████████████          ] 75% 92.1 MB/122.5 MB
+
+✅ Download Completed Successfully!
+
+╭─────────────────────────────────────────────────╮
+│                   Summary                       │
+╰─────────────────────────────────────────────────╯
+📊 Files:       672 successful, 0 failed, 672 total
+💾 Data:        122.5 MB downloaded
+⚡ Speed:       2.1 MB/s average
+⏱️  Duration:    01m23s
+📦 Zip:         ./my-archive.zip (115.2 MB)
+🗜️  Compression: 6.0% saved
+🗑️  Cleanup:     Source directory removed
 ```
 
 ## License

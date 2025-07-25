@@ -74,6 +74,24 @@ example-s3: build
 		--verbose \
 		s3://$(BUCKET)/$(PREFIX) $(DEST)
 
+# Example: Clone from S3 and create zip
+.PHONY: example-s3-zip
+example-s3-zip: build
+	@echo "Example: Clone from S3 bucket and create zip"
+	@echo "Usage: make example-s3-zip BUCKET=my-bucket PREFIX=folder/ DEST=./local-folder ACCESS_KEY=xxx SECRET_KEY=yyy ZIP_PATH=./archive.zip"
+	@if [ -z "$(BUCKET)" ] || [ -z "$(ACCESS_KEY)" ] || [ -z "$(SECRET_KEY)" ]; then \
+		echo "Please provide BUCKET, ACCESS_KEY, and SECRET_KEY variables"; \
+		exit 1; \
+	fi
+	$(BINARY_PATH) clone \
+		--access-key=$(ACCESS_KEY) \
+		--secret-key=$(SECRET_KEY) \
+		--zip \
+		$(if $(ZIP_PATH),--zip-path=$(ZIP_PATH)) \
+		$(if $(REMOVE_SOURCE),--remove-source) \
+		--verbose \
+		s3://$(BUCKET)/$(PREFIX) $(DEST)
+
 # Example: Configure AWS provider
 .PHONY: config-aws
 config-aws: build
@@ -140,6 +158,11 @@ help:
 	@echo "  config-aws  - Configure AWS provider (requires ACCESS_KEY, SECRET_KEY)"
 	@echo "  config-do   - Configure DigitalOcean provider (requires ACCESS_KEY, SECRET_KEY)"
 	@echo "  config-list - List configured providers"
+	@echo "  example-s3-zip - Clone from S3 and create zip (requires BUCKET, ACCESS_KEY, SECRET_KEY)"
 	@echo "  verify      - Verify the binary works"
 	@echo "  dev-setup   - Set up development environment"
-	@echo "  help        - Show this help" 
+	@echo "  help        - Show this help"
+	@echo ""
+	@echo "Duplicate handling examples:"
+	@echo "  Enable:  ./download-bucket clone --handle-duplicates=true s3://bucket/path/ ./dest"
+	@echo "  Disable: ./download-bucket clone --handle-duplicates=false s3://bucket/path/ ./dest" 

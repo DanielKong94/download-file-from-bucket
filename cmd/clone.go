@@ -4,24 +4,30 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"download-file-from-bucket/config"
 	"download-file-from-bucket/downloader"
 	"download-file-from-bucket/providers"
+	"download-file-from-bucket/ui"
 )
 
 var (
-	providerName  string
-	concurrency   int
-	accessKey     string
-	secretKey     string
-	region        string
-	endpoint      string
-	bucket        string
+	providerName     string
+	concurrency      int
+	accessKey        string
+	secretKey        string
+	region           string
+	endpoint         string
+	bucket           string
+	createZip        bool
+	zipPath          string
+	removeSource     bool
+	handleDuplicates bool
+	quietMode        bool
 )
 
 var cloneCmd = &cobra.Command{
@@ -37,7 +43,10 @@ Source formats:
 Examples:
   download-bucket clone s3://my-bucket/data/ ./local-data
   download-bucket clone --provider=digitalocean spaces://my-space/images/ ./images
-  download-bucket clone --provider=aws --region=eu-west-1 s3://eu-bucket/files/ ./files`,
+  download-bucket clone --provider=aws --region=eu-west-1 s3://eu-bucket/files/ ./files
+  download-bucket clone --zip s3://my-bucket/data/ ./local-data
+  download-bucket clone --zip --zip-path=./my-archive.zip s3://my-bucket/data/ ./local-data
+  download-bucket clone --quiet s3://my-bucket/data/ ./local-data`,
 	Args: cobra.ExactArgs(2),
 	RunE: runClone,
 }
@@ -52,6 +61,11 @@ func init() {
 	cloneCmd.Flags().StringVar(&region, "region", "", "Region (overrides config)")
 	cloneCmd.Flags().StringVar(&endpoint, "endpoint", "", "Custom endpoint (overrides config)")
 	cloneCmd.Flags().StringVar(&bucket, "bucket", "", "Bucket name (overrides URL)")
+	cloneCmd.Flags().BoolVar(&createZip, "zip", false, "Create a zip file after downloading")
+	cloneCmd.Flags().StringVar(&zipPath, "zip-path", "", "Path for the zip file (default: <destination>.zip)")
+	cloneCmd.Flags().BoolVar(&removeSource, "remove-source", false, "Remove source directory after creating zip")
+	cloneCmd.Flags().BoolVar(&handleDuplicates, "handle-duplicates", true, "Handle duplicate files by adding numbers (default: true)")
+	cloneCmd.Flags().BoolVar(&quietMode, "quiet", false, "Use simple progress output instead of progress bar")
 }
 
 func runClone(cmd *cobra.Command, args []string) error {
@@ -95,50 +109,91 @@ func runClone(cmd *cobra.Command, args []string) error {
 	}
 	defer provider.Close()
 
-	// Create downloader
+	// Create downloader with zip options
 	dl := downloader.NewDownloader(provider, downloader.Options{
-		Concurrency: concurrency,
-		Verbose:     verbose,
+		Concurrency:      concurrency,
+		Verbose:          verbose,
+		CreateZip:        createZip,
+		ZipPath:          zipPath,
+		HandleDuplicates: handleDuplicates,
 	})
 
-	// Progress callback
-	var lastProgress time.Time
-	progressCallback := func(progress providers.DownloadProgress) {
-		if verbose && time.Since(lastProgress) > time.Second {
-			if progress.Error != nil {
-				fmt.Printf("Error downloading %s: %v\n", progress.Key, progress.Error)
-			} else if progress.Completed {
-				fmt.Printf("Completed: %s (%d bytes)\n", progress.Key, progress.BytesDownloaded)
-			}
-			lastProgress = time.Now()
-		}
+	// Start download with UI
+	ctx := context.Background()
+	
+	// First, get object list to initialize progress tracker
+	objects, err := provider.ListObjects(ctx, parsedSource.Prefix)
+	if err != nil {
+		return fmt.Errorf("failed to list objects: %w", err)
 	}
 
-	fmt.Printf("Cloning %s to %s...\n", sourceURL, destDir)
+	if len(objects) == 0 {
+		fmt.Printf("No files found with prefix: %s\n", parsedSource.Prefix)
+		return nil
+	}
+
+	// Calculate total size
+	var totalBytes int64
+	for _, obj := range objects {
+		totalBytes += obj.Size
+	}
+
+	// Create progress tracker
+	var progressTracker *ui.ProgressTracker
+	if quietMode {
+		progressTracker = ui.NewProgressTrackerWithOptions(len(objects), totalBytes, verbose, true)
+	} else {
+		progressTracker = ui.NewProgressTracker(len(objects), totalBytes, verbose)
+	}
+	
+	// Print start message
+	progressTracker.PrintStartMessage(sourceURL, destDir)
+	
+	// Progress callback using the UI tracker
+	progressCallback := func(progress providers.DownloadProgress) {
+		progressTracker.UpdateProgress(progress)
+	}
 	
 	// Start download
-	ctx := context.Background()
 	result, err := dl.DownloadFolder(ctx, parsedSource.Prefix, destDir, progressCallback)
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
 
-	// Print results
-	fmt.Printf("\nDownload completed!\n")
-	fmt.Printf("Files: %d total, %d successful, %d failed\n", 
-		result.TotalFiles, result.SuccessfulFiles, result.FailedFiles)
-	fmt.Printf("Total size: %.2f MB\n", float64(result.TotalBytes)/(1024*1024))
-	fmt.Printf("Duration: %v\n", result.Duration)
+	// Finish progress bar
+	progressTracker.Finish()
 
-	if len(result.Errors) > 0 {
-		fmt.Printf("\nErrors:\n")
-		for _, err := range result.Errors {
-			fmt.Printf("  - %v\n", err)
+	// Handle zip creation
+	var sourceRemoved bool
+	if result.ZipPath != "" {
+		progressTracker.PrintZipProgress(result.ZipPath)
+		
+		// Remove source directory if requested
+		if removeSource && result.SuccessfulFiles > 0 {
+			if err := removeDirectory(destDir); err != nil {
+				if verbose {
+					fmt.Printf("Warning: Failed to remove source directory: %v\n", err)
+				}
+			} else {
+				sourceRemoved = true
+			}
 		}
+	}
+
+	// Print completion summary
+	progressTracker.PrintCompletionMessage(result.ZipPath, result.ZipSize, sourceRemoved)
+
+	// Return error if there were failures (errors are already shown in the summary)
+	if len(result.Errors) > 0 {
 		return fmt.Errorf("download completed with %d errors", len(result.Errors))
 	}
 
 	return nil
+}
+
+// removeDirectory removes a directory and all its contents
+func removeDirectory(dir string) error {
+	return os.RemoveAll(dir)
 }
 
 // SourceInfo holds parsed information from the source URL
